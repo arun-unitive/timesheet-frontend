@@ -1,0 +1,130 @@
+/* ==========================================================================
+   Design tokens - the single source of truth for colour, type, spacing.
+   ========================================================================== */
+
+:root {
+  /* Brand */
+  --primary-50: #eef2ff;
+  --primary-100: #e0e7ff;
+  --primary-200: #c7d2fe;
+  --primary-300: #a5b4fc;
+  --primary-400: #818cf8;
+  --primary-500: #6366f1;
+  --primary-600: #4f46e5;
+  --primary-700: #4338ca;
+  --primary-800: #3730a3;
+
+  /* Neutrals */
+  --gray-25: #fcfcfd;
+  --gray-50: #f8fafc;
+  --gray-100: #f1f5f9;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+  --gray-900: #0f172a;
+
+  /* Semantic */
+  --success-bg: #dcfce7;
+  --success-fg: #15803d;
+  --success: #16a34a;
+
+  --warning-bg: #fef3c7;
+  --warning-fg: #b45309;
+  --warning: #d97706;
+
+  --danger-bg: #fee2e2;
+  --danger-fg: #b91c1c;
+  --danger: #dc2626;
+
+  --info-bg: #e0f2fe;
+  --info-fg: #0369a1;
+  --info: #0284c7;
+
+  --neutral-bg: #f1f5f9;
+  --neutral-fg: #475569;
+
+  /* Surfaces */
+  --bg-app: #f6f7fb;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f8fafc;
+  --bg-inset: #f1f5f9;
+  --sidebar-bg: #111827;
+  --sidebar-bg-hover: #1f2937;
+  --sidebar-fg: #cbd5e1;
+  --sidebar-fg-active: #ffffff;
+  --sidebar-accent: #6366f1;
+
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #6b7280;
+  --text-inverse: #ffffff;
+
+  /* Type scale */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-base: 0.875rem;
+  --fs-md: 0.9375rem;
+  --fs-lg: 1.0625rem;
+  --fs-xl: 1.25rem;
+  --fs-2xl: 1.5rem;
+  --fs-3xl: 1.875rem;
+
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  --lh-tight: 1.25;
+  --lh-normal: 1.5;
+
+  /* Spacing scale (4px base) */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.25rem;
+  --sp-6: 1.5rem;
+  --sp-8: 2rem;
+  --sp-10: 2.5rem;
+  --sp-12: 3rem;
+
+  /* Radius */
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-full: 999px;
+
+  /* Elevation */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
+
+  --sidebar-w: 260px;
+  --header-h: 64px;
+
+  --z-dropdown: 40;
+  --z-drawer: 60;
+  --z-modal: 70;
+  --z-toast: 90;
+
+  --transition: 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition: 0ms;
+  }
+}
