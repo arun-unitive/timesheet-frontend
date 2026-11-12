@@ -20,6 +20,8 @@ const api = axios.create({
   timeout: 20000,
 });
 
+// console.log("API BASE URL's:", import.meta.env.VITE_API_URL);
+
 api.interceptors.request.use((config) => {
   const token = tokenStore.get();
   if (token) config.headers.Authorization = `Bearer ${token}`;
