@@ -1042,6 +1042,11 @@
   animation: pop-in 120ms ease;
 }
 
+.dropdown__menu--portal {
+  position: fixed;
+  overflow-y: auto;
+}
+
 .dropdown__item {
   display: flex;
   align-items: center;
@@ -1212,12 +1217,17 @@
 
 /* Grid Timesheet */
 .ts-grid-container {
-  overflow-x: auto;
+  overflow: visible;
   margin-top: var(--sp-4);
   background: var(--bg-surface);
   border-radius: var(--r-lg);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-sm);
+}
+
+.ts-grid-scroll {
+  max-height: min(70vh, 720px);
+  overflow: auto;
 }
 
 .ts-grid {

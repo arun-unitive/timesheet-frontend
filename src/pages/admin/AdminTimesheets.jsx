@@ -282,142 +282,144 @@ export default function AdminTimesheets() {
                 )}
               </div>
             </div>
-            <table className="ts-grid ts-grid--admin">
-              <thead>
-                <tr>
-                  <th className="ts-grid__th--employee">Employee</th>
-                  <th className="ts-grid__th--date">Date</th>
-                  {GRID_HOURS.map(h => (
-                    <th key={h}>{h}{h === 1 ? 'st' : h === 2 ? 'nd' : h === 3 ? 'rd' : 'th'} Hour</th>
-                  ))}
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dates.map((date, dateIdx) => {
-                  const dateRows = grid.filter(r => r.date === date);
-                  if (!dateRows.length) return null;
-                  const isToday = date === today;
-                  const commonLeave = leaveMaps.common.get(date);
-                  // Sundays behave like leave days unless a holiday already covers them.
-                  const sundayLeave =
-                    !commonLeave && weekdayName(date) === 'Sun' ? { leaveType: WEEKEND_LEAVE_TYPE } : null;
-                  const dayLeave = commonLeave || sundayLeave;
-                  const dateTint = dayLeave ? leaveHighlight(dayLeave.leaveType) : null;
+            <div className="ts-grid-scroll">
+              <table className="ts-grid ts-grid--admin">
+                <thead>
+                  <tr>
+                    <th className="ts-grid__th--employee">Employee</th>
+                    <th className="ts-grid__th--date">Date</th>
+                    {GRID_HOURS.map(h => (
+                      <th key={h}>{h}{h === 1 ? 'st' : h === 2 ? 'nd' : h === 3 ? 'rd' : 'th'} Hour</th>
+                    ))}
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dates.map((date, dateIdx) => {
+                    const dateRows = grid.filter(r => r.date === date);
+                    if (!dateRows.length) return null;
+                    const isToday = date === today;
+                    const commonLeave = leaveMaps.common.get(date);
+                    // Sundays behave like leave days unless a holiday already covers them.
+                    const sundayLeave =
+                      !commonLeave && weekdayName(date) === 'Sun' ? { leaveType: WEEKEND_LEAVE_TYPE } : null;
+                    const dayLeave = commonLeave || sundayLeave;
+                    const dateTint = dayLeave ? leaveHighlight(dayLeave.leaveType) : null;
 
-                  return dateRows.map((row, idx) => {
-                    const ts = row.timesheet;
-                    const slots = ts ? expandEntries(ts.entries) : [];
-                    const groups = ts ? groupSlots(slots) : [];
-                    // Real leave for this employee; a Sunday only tints the row (no chip).
-                    const employeeLeave =
-                      leaveMaps.individual.get(`${date}::${row.employee._id}`) || commonLeave;
-                    const employeeTint = employeeLeave ? leaveHighlight(employeeLeave.leaveType) : null;
-                    const rowLeave = employeeLeave || sundayLeave;
-                    const rowTint = rowLeave ? leaveHighlight(rowLeave.leaveType) : null;
-                    const rowClass = [
-                      'ts-grid__row',
-                      dateIdx % 2 === 1 ? 'ts-grid__row--alt' : '',
-                      isToday ? 'ts-grid__row--today' : '',
-                      rowLeave ? 'ts-grid__row--leave' : '',
-                    ].filter(Boolean).join(' ');
+                    return dateRows.map((row, idx) => {
+                      const ts = row.timesheet;
+                      const slots = ts ? expandEntries(ts.entries) : [];
+                      const groups = ts ? groupSlots(slots) : [];
+                      // Real leave for this employee; a Sunday only tints the row (no chip).
+                      const employeeLeave =
+                        leaveMaps.individual.get(`${date}::${row.employee._id}`) || commonLeave;
+                      const employeeTint = employeeLeave ? leaveHighlight(employeeLeave.leaveType) : null;
+                      const rowLeave = employeeLeave || sundayLeave;
+                      const rowTint = rowLeave ? leaveHighlight(rowLeave.leaveType) : null;
+                      const rowClass = [
+                        'ts-grid__row',
+                        dateIdx % 2 === 1 ? 'ts-grid__row--alt' : '',
+                        isToday ? 'ts-grid__row--today' : '',
+                        rowLeave ? 'ts-grid__row--leave' : '',
+                      ].filter(Boolean).join(' ');
 
-                    return (
-                      <tr
-                        key={`${row.date}-${row.employee._id}`}
-                        data-date={row.date}
-                        className={rowClass}
-                        style={rowTint ? { backgroundColor: rowTint.bg } : undefined}
-                      >
-                        <td className="ts-grid__employee-cell">
-                          <div className="ts-grid__employee">
-                            <span className="ts-grid__employee-avatar">{getInitials(row.employee.name)}</span>
-                            <div className="ts-grid__employee-info">
-                              <span className="ts-grid__employee-name">{row.employee.name}</span>
-                              <span className="ts-grid__employee-dept">{row.employee.department || '—'}</span>
-                              {employeeLeave && (
-                                <span
-                                  className="ts-grid__leave-chip"
-                                  style={{
-                                    backgroundColor: employeeTint.bg,
-                                    color: employeeTint.fg,
-                                    borderColor: employeeTint.border,
-                                  }}
-                                >
-                                  {leaveTypeLabel(employeeLeave.leaveType)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        {idx === 0 && (
-                          <td
-                            rowSpan={dateRows.length}
-                            className={`ts-grid__date-cell ts-grid__date-cell--admin${isToday ? ' is-today' : ''}`}
-                            style={dateTint ? { backgroundColor: dateTint.bg, boxShadow: `inset 3px 0 0 ${dateTint.border}` } : undefined}
-                          >
-                            <div className="ts-grid__date-info">
-                              <span className="ts-grid__date-text">{formatDateRef(date)}</span>
-                              <span className="ts-grid__day-text">{weekdayName(date)}</span>
-                              {isToday && <span className="ts-grid__today-tag">Today</span>}
-                              {dayLeave && (
-                                <span
-                                  className="ts-grid__leave-chip"
-                                  style={{ backgroundColor: dateTint.bg, color: dateTint.fg, borderColor: dateTint.border }}
-                                >
-                                  {leaveTypeLabel(dayLeave.leaveType)}
-                                </span>
-                              )}
+                      return (
+                        <tr
+                          key={`${row.date}-${row.employee._id}`}
+                          data-date={row.date}
+                          className={rowClass}
+                          style={rowTint ? { backgroundColor: rowTint.bg } : undefined}
+                        >
+                          <td className="ts-grid__employee-cell">
+                            <div className="ts-grid__employee">
+                              <span className="ts-grid__employee-avatar">{getInitials(row.employee.name)}</span>
+                              <div className="ts-grid__employee-info">
+                                <span className="ts-grid__employee-name">{row.employee.name}</span>
+                                <span className="ts-grid__employee-dept">{row.employee.department || '—'}</span>
+                                {employeeLeave && (
+                                  <span
+                                    className="ts-grid__leave-chip"
+                                    style={{
+                                      backgroundColor: employeeTint.bg,
+                                      color: employeeTint.fg,
+                                      borderColor: employeeTint.border,
+                                    }}
+                                  >
+                                    {leaveTypeLabel(employeeLeave.leaveType)}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </td>
-                        )}
-                        {ts ? (
-                          <>
-                            {groups.map(group => {
-                              const typed = isTypedEntry(group.type);
-                              return (
-                                <td
-                                  key={group.startIndex}
-                                  colSpan={group.colSpan}
-                                  className={`ts-grid__slot${typed ? ` ts-grid__slot--${group.type.toLowerCase()}` : ''}`}
-                                >
-                                  {group.filled ? (
-                                    <div className="ts-grid__cell-inner">
-                                      {group.description && (
-                                        <span className="ts-grid__cell-text">{group.description}</span>
-                                      )}
-                                      {typed && (
-                                        <span className={`ts-grid__type-tag ts-grid__type-tag--${group.type.toLowerCase()}`}>
-                                          {group.type}
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="ts-grid__empty">—</span>
-                                  )}
-                                </td>
-                              );
-                            })}
-                            <td className="ts-grid__total-cell">
-                              {formatHoursShort(ts.totalHours)}
+                          {idx === 0 && (
+                            <td
+                              rowSpan={dateRows.length}
+                              className={`ts-grid__date-cell ts-grid__date-cell--admin${isToday ? ' is-today' : ''}`}
+                              style={dateTint ? { backgroundColor: dateTint.bg, boxShadow: `inset 3px 0 0 ${dateTint.border}` } : undefined}
+                            >
+                              <div className="ts-grid__date-info">
+                                <span className="ts-grid__date-text">{formatDateRef(date)}</span>
+                                <span className="ts-grid__day-text">{weekdayName(date)}</span>
+                                {isToday && <span className="ts-grid__today-tag">Today</span>}
+                                {dayLeave && (
+                                  <span
+                                    className="ts-grid__leave-chip"
+                                    style={{ backgroundColor: dateTint.bg, color: dateTint.fg, borderColor: dateTint.border }}
+                                  >
+                                    {leaveTypeLabel(dayLeave.leaveType)}
+                                  </span>
+                                )}
+                              </div>
                             </td>
-                          </>
-                        ) : (
-                          <>
-                            {GRID_HOURS.map(h => (
-                              <td key={h} className="ts-grid__slot">
-                                <span className="ts-grid__empty">—</span>
+                          )}
+                          {ts ? (
+                            <>
+                              {groups.map(group => {
+                                const typed = isTypedEntry(group.type);
+                                return (
+                                  <td
+                                    key={group.startIndex}
+                                    colSpan={group.colSpan}
+                                    className={`ts-grid__slot${typed ? ` ts-grid__slot--${group.type.toLowerCase()}` : ''}`}
+                                  >
+                                    {group.filled ? (
+                                      <div className="ts-grid__cell-inner">
+                                        {group.description && (
+                                          <span className="ts-grid__cell-text">{group.description}</span>
+                                        )}
+                                        {typed && (
+                                          <span className={`ts-grid__type-tag ts-grid__type-tag--${group.type.toLowerCase()}`}>
+                                            {group.type}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="ts-grid__empty">—</span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                              <td className="ts-grid__total-cell">
+                                {formatHoursShort(ts.totalHours)}
                               </td>
-                            ))}
-                            <td className="ts-grid__total-cell ts-grid__total-cell--empty">—</td>
-                          </>
-                        )}
-                      </tr>
-                    );
-                  });
-                })}
-              </tbody>
-            </table>
+                            </>
+                          ) : (
+                            <>
+                              {GRID_HOURS.map(h => (
+                                <td key={h} className="ts-grid__slot">
+                                  <span className="ts-grid__empty">—</span>
+                                </td>
+                              ))}
+                              <td className="ts-grid__total-cell ts-grid__total-cell--empty">—</td>
+                            </>
+                          )}
+                        </tr>
+                      );
+                    });
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </Card>

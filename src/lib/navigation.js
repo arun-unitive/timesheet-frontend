@@ -22,7 +22,7 @@ export const NAV = {
     { to: '/employee/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/employee/timesheet', label: 'My Timesheet', icon: Timer },
     { to: '/employee/history', label: 'My History', icon: History },
-    { to: '/employee/leaves', label: 'My Leaves', icon: CalendarCheck },
+    { to: '/employee/leaves', label: 'My Leave', icon: CalendarCheck },
   ],
 };
 

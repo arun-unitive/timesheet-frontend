@@ -65,7 +65,7 @@ export default function MyLeaves() {
 
   return (
     <div className="page">
-      <PageHead title="My Leaves" subtitle="Your holidays, comp-off balance and granted leaves." />
+      <PageHead title="My Leave" subtitle="Your holidays, comp-off balance and granted leaves." />
 
       <div className="stat-grid">
         <StatCard

@@ -71,8 +71,8 @@ function TimesheetRow({
     onDirtyChange?.(date, isDirty);
   }, [date, isDirty, onDirtyChange]);
 
-  // Working hours exclude Permission / Leave slots, which are tracked but not counted.
-  const totalHours = cells.filter((cell) => isFilledSlot(cell) && !isTypedEntry(cell.type)).length;
+  // Every filled slot counts as one working hour, including Permission / Leave.
+  const totalHours = cells.filter(isFilledSlot).length;
   const isFuture = date > new Date().toISOString().split('T')[0];
   const locked = isFuture;
 
@@ -89,10 +89,10 @@ function TimesheetRow({
     }
   };
 
-  const handleOpenEdit = () => {
-    if (selectedIndices.length === 0) return;
+  const openEditFor = (indices) => {
+    if (indices.length === 0) return;
     // Seed the form with the values of the first selected slot.
-    const firstSelected = cells[selectedIndices[0]];
+    const firstSelected = cells[indices[0]];
     setEditValue(firstSelected.description || '');
     if (isTypedEntry(firstSelected.type)) {
       setEditMode('typed');
@@ -102,6 +102,15 @@ function TimesheetRow({
       setEditType('Permission');
     }
     setShowEditModal(true);
+  };
+
+  const handleOpenEdit = () => openEditFor(selectedIndices);
+
+  // Double-clicking a slot selects that entry and opens the edit popup.
+  const handleGroupDoubleClick = (indices) => {
+    if (locked) return;
+    setSelectedIndices(indices);
+    openEditFor(indices);
   };
 
   const handleApplyEdit = () => {
@@ -189,6 +198,7 @@ function TimesheetRow({
               <div
                 className={`ts-grid__cell-content ${isSelected ? 'selected' : ''} ${locked ? 'disabled' : ''} ts-grid__cell-content--${group.type.toLowerCase()}`}
                 onClick={() => toggleGroupSelection(group.indices)}
+                onDoubleClick={() => handleGroupDoubleClick(group.indices)}
               >
                 {group.filled ? (
                   <div className="ts-grid__cell-inner">
