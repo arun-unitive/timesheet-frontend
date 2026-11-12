@@ -16,7 +16,7 @@ export const NAV = {
     { to: '/admin/employees', label: 'Employees', icon: Users },
     { to: '/admin/timesheets', label: 'Timesheets', icon: ClipboardList },
     { to: '/admin/leaves', label: 'Leave Management', icon: CalendarDays },
-    { to: '/admin/settings', label: 'Settings', icon: Settings },
+    // { to: '/admin/settings', label: 'Settings', icon: Settings },
   ],
   employee: [
     { to: '/employee/dashboard', label: 'Dashboard', icon: LayoutDashboard },
