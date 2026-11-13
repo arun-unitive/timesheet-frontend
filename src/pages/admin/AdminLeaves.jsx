@@ -207,99 +207,120 @@ export default function AdminLeaves() {
       <Tabs value={params.scope} onChange={(scope) => setParam({ scope })} options={FILTER_TABS} />
 
       <Card flush>
-        <div className="toolbar">
-          <Select
-            value={params.leaveType}
-            onChange={(e) => setParam({ leaveType: e.target.value })}
-            style={{ width: 170 }}
-            aria-label="Filter by leave type"
-          >
-            <option value="">All leave types</option>
-            {LEAVE_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {LEAVE_TYPE_META[type]?.label || type}
-              </option>
-            ))}
-          </Select>
-          <Select
-            value={params.employee}
-            onChange={(e) => setParam({ employee: e.target.value })}
-            style={{ minWidth: 190 }}
-            aria-label="Filter by employee"
-          >
-            <option value="">All employees</option>
-            {employees.map((emp) => (
-              <option key={emp._id} value={emp._id}>
-                {emp.name}
-              </option>
-            ))}
-          </Select>
-          <Input
-            type="date"
-            value={params.from}
-            onChange={(e) => setParam({ from: e.target.value })}
-            style={{ width: 160 }}
-            aria-label="From date"
-          />
-          <Input
-            type="date"
-            value={params.to}
-            onChange={(e) => setParam({ to: e.target.value })}
-            style={{ width: 160 }}
-            aria-label="To date"
-          />
-          <Select
-            value={params.limit}
-            onChange={(e) => setParam({ limit: Number(e.target.value) })}
-            style={{ width: 120 }}
-            aria-label="Rows per page"
-          >
-            {PAGE_SIZE_OPTIONS.map((n) => (
-              <option key={n} value={n}>
-                {n} / page
-              </option>
-            ))}
-          </Select>
-          <span className="toolbar__spacer" />
-          {hasFilters && (
-            <Button variant="secondary" icon={FilterX} onClick={clearFilters}>
-              Clear filters
-            </Button>
-          )}
+  <div
+    className="toolbar"
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "12px",
+      padding: "16px",
+      flexWrap: "nowrap",
+      overflowX: "auto",
+    }}
+  >
+    {/* Left side: All Filters with 10px gap between each */}
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+      <Select
+        value={params.leaveType}
+        onChange={(e) => setParam({ leaveType: e.target.value })}
+        style={{ width: 160 }}
+        aria-label="Filter by leave type"
+      >
+        <option value="">All leave types</option>
+        {LEAVE_TYPES.map((type) => (
+          <option key={type} value={type}>
+            {LEAVE_TYPE_META[type]?.label || type}
+          </option>
+        ))}
+      </Select>
+
+      <Select
+        value={params.employee}
+        onChange={(e) => setParam({ employee: e.target.value })}
+        style={{ minWidth: 100 }}
+        aria-label="Filter by employee"
+      >
+        <option value="">All employees</option>
+        {employees.map((emp) => (
+          <option key={emp._id} value={emp._id}>
+            {emp.name}
+          </option>
+        ))}
+      </Select>
+
+      <Input
+        type="date"
+        value={params.from}
+        onChange={(e) => setParam({ from: e.target.value })}
+        style={{ width: 135 }}
+        aria-label="From date"
+      />
+
+      <Input
+        type="date"
+        value={params.to}
+        onChange={(e) => setParam({ to: e.target.value })}
+        style={{ width: 135 }}
+        aria-label="To date"
+      />
+
+      <Select
+        value={params.limit}
+        onChange={(e) => setParam({ limit: Number(e.target.value) })}
+        style={{ width: 125 }}
+        aria-label="Rows per page"
+      >
+        {PAGE_SIZE_OPTIONS.map((n) => (
+          <option key={n} value={n}>
+            {n} / page
+          </option>
+        ))}
+      </Select>
+    </div>
+
+    {/* Right side: Action Buttons */}
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+      {hasFilters && (
+        <Button variant="secondary" icon={FilterX} onClick={clearFilters}>
+          {/* clear filter */}
+        </Button>
+      )}
+      <Button variant="primary" icon={Plus} onClick={openCreate}>
+        Add Leave
+      </Button>
+    </div>
+  </div>
+
+  <DataTable
+    columns={columns}
+    rows={rows}
+    loading={isLoading}
+    sortBy={params.sortBy}
+    order={params.order}
+    onSort={(sortBy, order) => setParam({ sortBy, order })}
+    empty={
+      <EmptyState
+        icon={CalendarDays}
+        title="No leaves found"
+        message="Try adjusting the filters or add a new leave entry."
+        action={
           <Button variant="primary" icon={Plus} onClick={openCreate}>
             Add Leave
           </Button>
-        </div>
+        }
+      />
+    }
+  />
 
-        <DataTable
-          columns={columns}
-          rows={rows}
-          loading={isLoading}
-          sortBy={params.sortBy}
-          order={params.order}
-          onSort={(sortBy, order) => setParam({ sortBy, order })}
-          empty={
-            <EmptyState
-              icon={CalendarDays}
-              title="No leaves found"
-              message="Try adjusting the filters or add a new leave entry."
-              action={
-                <Button variant="primary" icon={Plus} onClick={openCreate}>
-                  Add Leave
-                </Button>
-              }
-            />
-          }
-        />
-
-        <Pagination
-          page={meta.page}
-          totalPages={meta.totalPages}
-          total={meta.total}
-          limit={meta.limit}
-          onPageChange={(page) => setParam({ page })}
-        />
-      </Card>
+  <Pagination
+    page={meta.page}
+    totalPages={meta.totalPages}
+    total={meta.total}
+    limit={meta.limit}
+    onPageChange={(page) => setParam({ page })}
+  />
+</Card>
 
       <LeaveFormModal open={formOpen} onClose={() => setFormOpen(false)} leave={editing} employees={employees} />
 

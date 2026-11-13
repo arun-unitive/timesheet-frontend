@@ -6,7 +6,17 @@ import { X } from 'lucide-react';
  * Accessible modal: portal-rendered, closes on ESC / backdrop click,
  * and locks body scroll while open.
  */
-export default function Modal({ open, onClose, title, subtitle, children, footer, size = 'md', closeOnBackdrop = true }) {
+export default function Modal({
+  open,
+  onClose,
+  title,
+  subtitle,
+  children,
+  footer,
+  size = 'md',
+  closeOnBackdrop = true,
+  className = '',
+}) {
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => {
@@ -25,7 +35,7 @@ export default function Modal({ open, onClose, title, subtitle, children, footer
 
   return createPortal(
     <div className="overlay" onMouseDown={closeOnBackdrop ? (e) => e.target === e.currentTarget && onClose?.() : undefined}>
-      <div className={`modal modal--${size}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`modal modal--${size} ${className}`.trim()} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal__head">
           <div>
             <div className="modal__title">{title}</div>

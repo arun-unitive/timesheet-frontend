@@ -5,7 +5,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Eye,
+  Clock,
   History,
   Pencil,
   Timer,
@@ -14,11 +14,9 @@ import {
 import PageHead from '../../components/layout/PageHead';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import Tabs from '../../components/ui/Tabs';
 import Modal from '../../components/ui/Modal';
 import StatCard from '../../components/ui/StatCard';
 import EmptyState from '../../components/ui/EmptyState';
-import DataTable from '../../components/ui/DataTable';
 import Pagination from '../../components/ui/Pagination';
 import { Select } from '../../components/ui/Input';
 import { CardSkeleton } from '../../components/ui/Loader';
@@ -36,34 +34,66 @@ import {
   formatDate,
   formatDateCompact,
   formatHours,
-  formatHoursShort,
   startOfMonthISO,
   startOfWeekISO,
   todayISO,
   weekdayName,
 } from '../../lib/format';
-import { expandEntries, groupSlots, isTypedEntry } from '../../lib/timesheet';
+import { expandEntries, groupSlots, isFilledSlot, isTypedEntry } from '../../lib/timesheet';
 
-const toDraftRow = (sheet) => {
-  const cells = Array(8).fill('');
-  if (sheet?.entries) {
-    sheet.entries.forEach((entry, idx) => {
-      if (idx < 8) cells[idx] = entry.description || entry.project || '';
-    });
-  }
-  return cells;
-};
+/** A full day is 8 logged hours; used for the progress bars. */
+const DAILY_TARGET = GRID_HOURS.length;
 
-/** Shared prev / next chevrons + period label used by the weekly and monthly tabs. */
+/** 7.5 -> "7.5", 8 -> "8" */
+const formatNum = (value) => String(Math.round((Number(value) || 0) * 100) / 100);
+
+/**
+ * Expand a saved day into one editable slot per hour. Permission / Leave slots
+ * keep their type (they carry no description), so editing a day never turns
+ * them into normal Work entries.
+ */
+const toDraftSlots = (sheet) =>
+  expandEntries(sheet?.entries, GRID_HOURS.length).map((slot) => ({
+    entryId: slot.entryId,
+    description: isTypedEntry(slot.type) ? '' : slot.description,
+    type: slot.type,
+  }));
+
+const TAB_OPTIONS = [
+  { value: 'daily', label: 'Daily', icon: Clock },
+  { value: 'weekly', label: 'Weekly', icon: TrendingUp },
+  { value: 'monthly', label: 'Monthly', icon: CalendarDays },
+];
+
+/** Segmented control with an icon per view. */
+function HistorySwitch({ value, onChange }) {
+  return (
+    <div className="history-switch" role="tablist">
+      {TAB_OPTIONS.map(({ value: option, label, icon: Icon }) => (
+        <button
+          key={option}
+          type="button"
+          role="tab"
+          aria-selected={value === option}
+          className={`history-switch__btn ${value === option ? 'is-active' : ''}`}
+          onClick={() => onChange(option)}
+        >
+          <Icon size={15} />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Rounded prev / next control with the period label in the middle. */
 function PeriodNav({ label, onPrev, onNext, nextDisabled }) {
   return (
-    <div className="flex items-center gap-2">
-      <Button variant="secondary" size="sm" icon={ChevronLeft} onClick={onPrev} aria-label="Previous period" />
-      <span className="fw-semibold" style={{ minWidth: 200, textAlign: 'center' }}>
-        {label}
-      </span>
+    <div className="history-nav">
+      <Button variant="ghost" size="sm" icon={ChevronLeft} onClick={onPrev} aria-label="Previous period" />
+      <span className="history-nav__label">{label}</span>
       <Button
-        variant="secondary"
+        variant="ghost"
         size="sm"
         icon={ChevronRight}
         onClick={onNext}
@@ -74,42 +104,93 @@ function PeriodNav({ label, onPrev, onNext, nextDisabled }) {
   );
 }
 
-/** Read-only day breakdown table shared by the weekly and monthly tabs. */
-function DayBreakdown({ title, subtitle, rows, loading, showWeekday }) {
-  const columns = useMemo(
-    () => [
-      {
-        key: 'date',
-        header: 'Date',
-        strong: true,
-        render: (row) => (showWeekday ? `${weekdayName(row.date)} · ${formatDateCompact(row.date)}` : formatDateCompact(row.date)),
-      },
-      {
-        key: 'hours',
-        header: 'Hours',
-        align: 'right',
-        render: (row) => formatHoursShort(row.hours),
-      },
-    ],
-    [showWeekday]
-  );
+const fillTone = (hours) => {
+  if (hours >= DAILY_TARGET) return 'is-full';
+  if (hours > 0 && hours < DAILY_TARGET / 2) return 'is-low';
+  return '';
+};
+
+/** Single day row: date chip, weekday, progress bar and total hours. */
+function DayRow({ row, onView, compact }) {
+  const [dayNum, monthLabel] = formatDateCompact(row.date).split(' ');
+  const percent = Math.min(100, (row.hours / DAILY_TARGET) * 100);
+  const interactive = Boolean(onView);
 
   return (
-    <Card title={title} subtitle={subtitle} flush>
-      <DataTable
-        columns={columns}
-        rows={rows}
-        loading={loading}
-        rowKey={(row) => row.date}
-        empty={
-          <EmptyState
-            icon={History}
-            title="No activity in this period"
-            message="There are no timesheet entries for the selected period."
-          />
-        }
-      />
-    </Card>
+    <div
+      className={`history-day ${compact ? 'history-day--compact' : ''} ${interactive ? 'is-interactive' : ''} ${row.hours === 0 ? 'is-empty' : ''}`}
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onClick={interactive ? () => onView(row) : undefined}
+      onKeyDown={
+        interactive
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onView(row);
+              }
+            }
+          : undefined
+      }
+    >
+      <div className="history-day__date">
+        <span className="history-day__daynum">{dayNum}</span>
+        <span className="history-day__mon">{monthLabel}</span>
+      </div>
+
+      <div className="history-day__main">
+        <div className="history-day__head">
+          <span className="history-day__weekday">{weekdayName(row.date)}</span>
+          <span className="history-day__meta">
+            {row.hours === 0
+              ? 'No hours logged'
+              : `${row.entries || 0} ${row.entries === 1 ? 'entry' : 'entries'}`}
+          </span>
+        </div>
+        <div className="history-day__track">
+          <span className={`history-day__fill ${fillTone(row.hours)}`} style={{ width: `${percent}%` }} />
+        </div>
+      </div>
+
+      <div className="history-day__hours">
+        <span className="history-day__value">{formatNum(row.hours)}</span>
+        <span className="history-day__unit">hours</span>
+      </div>
+
+      {interactive && <ChevronRight size={18} className="history-day__chev" />}
+    </div>
+  );
+}
+
+/** Day list with loading and empty states, shared by every tab. */
+function DayList({ rows, loading, onView, compact, emptyTitle, emptyMessage }) {
+  if (loading) {
+    return (
+      <div className="history-list">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="history-day is-skeleton">
+            <div className="skeleton" style={{ width: 56, height: 52, borderRadius: 'var(--r-md)' }} />
+            <div className="flex-1 flex flex-col gap-2">
+              <div className="skeleton" style={{ height: 12, width: '35%' }} />
+              <div className="skeleton" style={{ height: 6, width: '100%' }} />
+            </div>
+            <div className="skeleton" style={{ width: 46, height: 20 }} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (!rows.length) {
+    return <EmptyState icon={History} title={emptyTitle} message={emptyMessage} />;
+  }
+
+  return (
+    <div className="history-list">
+      {rows.map((row) => (
+        <DayRow key={row.date} row={row} onView={onView} compact={compact} />
+      ))}
+    </div>
   );
 }
 
@@ -177,6 +258,7 @@ export default function MyHistory() {
     return eachDayISO(from, to).map((iso) => ({
       date: iso,
       hours: map.get(iso)?.totalHours || 0,
+      entries: map.get(iso)?.entries || 0,
     }));
   };
 
@@ -220,76 +302,78 @@ export default function MyHistory() {
   });
 
   const startEdit = () => {
-    setDraftEntries(toDraftRow(detail));
+    setDraftEntries(toDraftSlots(detail));
     setEditing(true);
   };
 
+  // Editing a slot updates the whole entry it belongs to (matching the editor),
+  // and turning a Permission / Leave slot into text makes it a Work entry again.
   const updateDraft = (index, value) => {
-    setDraftEntries((prev) => prev.map((cell, i) => (i === index ? value : cell)));
+    setDraftEntries((prev) => {
+      const target = prev[index];
+      const groupId = target.entryId || `local-${index}`;
+      return prev.map((cell, i) =>
+        (cell.entryId && cell.entryId === target.entryId) || i === index
+          ? { entryId: groupId, type: 'Work', description: value }
+          : cell
+      );
+    });
   };
 
+  // Collapse the edited slots back into entries, keeping each Permission / Leave
+  // type and the number of hours it covers so nothing is dropped or miscounted.
   const saveDraft = () => {
-    const cleaned = draftEntries
-      .map((val) => ({
-        project: val.trim() || 'General',
-        description: val.trim(),
-        hours: 1,
-      }))
-      .filter((row) => row.description);
+    const entries = [];
+    for (let i = 0; i < draftEntries.length; ) {
+      const cell = draftEntries[i];
+      if (!cell.entryId || !isFilledSlot(cell)) {
+        i += 1;
+        continue;
+      }
 
-    if (!cleaned.length) {
+      let hours = 1;
+      while (
+        i + hours < draftEntries.length &&
+        draftEntries[i + hours].entryId === cell.entryId &&
+        isFilledSlot(draftEntries[i + hours])
+      ) {
+        hours += 1;
+      }
+
+      entries.push({
+        project: 'General',
+        description: cell.description.trim(),
+        type: cell.type,
+        hours,
+      });
+      i += hours;
+    }
+
+    if (!entries.length) {
       toast.error('Nothing to save', 'Enter at least one task description.');
       return;
     }
-    editMutation.mutate({ id: detail._id, entries: cleaned });
+    editMutation.mutate({ id: detail._id, entries });
   };
 
-  const draftTotal = draftEntries.filter(c => c.trim()).length;
+  const draftTotal = draftEntries.filter(isFilledSlot).length;
 
-  // ------------------------------ Daily table -----------------------------
-  const dailyColumns = useMemo(
-    () => [
-      { key: 'date', header: 'Date', sortable: true, strong: true, render: (row) => formatDateCompact(row.date) },
-      { key: 'entries', header: 'Entries', render: (row) => row.entries?.length || 0 },
-      {
-        key: 'totalHours',
-        header: 'Total hours',
-        sortable: true,
-        align: 'right',
-        render: (row) => formatHoursShort(row.totalHours),
-      },
-      {
-        key: 'action',
-        header: '',
-        align: 'right',
-        render: (row) => (
-          <div className="table-actions">
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={Eye}
-              onClick={() => {
-                setDetail(row);
-                setEditing(false);
-              }}
-            >
-              View
-            </Button>
-          </div>
-        ),
-      },
-    ],
-    []
-  );
+  // ------------------------------ Daily data ------------------------------
+  const dailyRows = (dailyQuery.data?.items || []).map((row) => ({
+    date: row.date,
+    hours: row.totalHours || 0,
+    entries: row.entries?.length || 0,
+    source: row,
+  }));
+  const dailyMeta = dailyQuery.data?.meta;
 
-  const handleSort = (field, nextOrder) => {
+  const sortValue = `${sortBy}:${order}`;
+  const handleSortChange = (value) => {
+    const [field, nextOrder] = value.split(':');
     setSortBy(field);
     setOrder(nextOrder);
     setPage(1);
   };
-
-  const dailyRows = dailyQuery.data?.items || [];
-  const dailyMeta = dailyQuery.data?.meta;
 
   // ---------------------------- Modal footer ------------------------------
   const modalFooter = editing ? (
@@ -316,53 +400,52 @@ export default function MyHistory() {
 
   return (
     <div className="page">
-      <PageHead title="My History" subtitle="Review your logged hours by day, week or month." />
-
-      <Tabs
-        value={tab}
-        onChange={setTab}
-        options={[
-          { value: 'daily', label: 'Daily' },
-          { value: 'weekly', label: 'Weekly' },
-          { value: 'monthly', label: 'Monthly' },
-        ]}
+      <PageHead
+        title="My History"
+        subtitle="Review your logged hours by day, week or month."
+        actions={<HistorySwitch value={tab} onChange={setTab} />}
       />
 
       {tab === 'daily' && (
         <Card flush>
-          <div className="toolbar">
-            <Select
-              value={limit}
-              onChange={(e) => {
-                setLimit(Number(e.target.value));
-                setPage(1);
-              }}
-              style={{ width: 120 }}
-            >
-              {PAGE_SIZE_OPTIONS.map((size) => (
-                <option key={size} value={size}>
-                  {size} / page
-                </option>
-              ))}
-            </Select>
-            <div className="toolbar__spacer" />
-            <span className="text-sm text-muted">{dailyMeta?.total ?? 0} days</span>
+          <div className="history-bar">
+            <div>
+              <div className="history-bar__title">Daily log</div>
+              <div className="history-bar__sub">{dailyMeta?.total ?? 0} days recorded</div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Select value={sortValue} onChange={(e) => handleSortChange(e.target.value)} style={{ width: 170 }}>
+                <option value="date:desc">Newest first</option>
+                <option value="date:asc">Oldest first</option>
+                <option value="totalHours:desc">Most hours</option>
+                <option value="totalHours:asc">Fewest hours</option>
+              </Select>
+              <Select
+                value={limit}
+                onChange={(e) => {
+                  setLimit(Number(e.target.value));
+                  setPage(1);
+                }}
+                style={{ width: 120 }}
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size} / page
+                  </option>
+                ))}
+              </Select>
+            </div>
           </div>
 
-          <DataTable
-            columns={dailyColumns}
+          <DayList
             rows={dailyRows}
             loading={dailyQuery.isLoading}
-            sortBy={sortBy}
-            order={order}
-            onSort={handleSort}
-            empty={
-              <EmptyState
-                icon={History}
-                title="No timesheets found"
-                message="Try changing the filters, or log time from My Timesheet."
-              />
-            }
+            onView={(row) => {
+              setDetail(row.source);
+              setEditing(false);
+            }}
+            emptyTitle="No timesheets found"
+            emptyMessage="Try changing the filters, or log time from My Timesheet."
           />
 
           <Pagination
@@ -376,14 +459,15 @@ export default function MyHistory() {
       )}
 
       {tab === 'weekly' && (
-        <>
-          <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="history-panel">
+          <div className="history-bar">
             <PeriodNav
               label={`${formatDate(weekStart)} – ${formatDate(weekEnd)}`}
               onPrev={() => setWeekOf(addDaysISO(weekStart, -7))}
               onNext={() => setWeekOf(addDaysISO(weekStart, 7))}
               nextDisabled={weekEnd >= today}
             />
+            <span className="history-bar__sub">Monday to Sunday</span>
           </div>
 
           <div className="stat-grid">
@@ -396,19 +480,22 @@ export default function MyHistory() {
             {weekQuery.isLoading ? <CardSkeleton height={260} /> : <HoursBarChart data={weekChart} />}
           </Card>
 
-          <DayBreakdown title="Day-by-day" subtitle="Selected week" rows={weekRows} loading={weekQuery.isLoading} showWeekday />
-        </>
+          <Card title="Day-by-day" subtitle="Selected week" flush>
+            <DayList rows={weekRows} loading={weekQuery.isLoading} compact />
+          </Card>
+        </div>
       )}
 
       {tab === 'monthly' && (
-        <>
-          <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="history-panel">
+          <div className="history-bar">
             <PeriodNav
               label={`${formatDate(monthStart)} – ${formatDate(monthEnd)}`}
               onPrev={() => setMonthOf(startOfMonthISO(addDaysISO(monthStart, -1)))}
               onNext={() => setMonthOf(startOfMonthISO(addDaysISO(monthEnd, 1)))}
               nextDisabled={monthEnd >= today}
             />
+            <span className="history-bar__sub">Calendar month</span>
           </div>
 
           <div className="stat-grid">
@@ -421,8 +508,10 @@ export default function MyHistory() {
             {monthQuery.isLoading ? <CardSkeleton height={260} /> : <HoursBarChart data={monthChart} />}
           </Card>
 
-          <DayBreakdown title="Day-by-day" subtitle="Selected month" rows={monthRows} loading={monthQuery.isLoading} />
-        </>
+          <Card title="Day-by-day" subtitle="Selected month" flush>
+            <DayList rows={monthRows} loading={monthQuery.isLoading} compact />
+          </Card>
+        </div>
       )}
 
       <Modal
@@ -432,80 +521,136 @@ export default function MyHistory() {
           setEditing(false);
         }}
         size="lg"
+        className="history-modal"
         title={detail ? formatDate(detail.date) : ''}
         subtitle={detail ? `${detail.entries?.length || 0} entries · ${formatHours(detail.totalHours)}` : undefined}
         footer={detail ? modalFooter : undefined}
       >
-        {detail && !editing && (
-          <div className="ts-grid-container" style={{ margin: 0 }}>
-            <table className="ts-grid">
-              <thead>
-                <tr>
-                  {GRID_HOURS.map(h => (
-                    <th key={h}>{h}{h === 1 ? 'st' : h === 2 ? 'nd' : h === 3 ? 'rd' : 'th'} Hour</th>
-                  ))}
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  {groupSlots(expandEntries(detail.entries)).map((group) => {
-                    const typed = isTypedEntry(group.type);
-                    return (
-                      <td
-                        key={group.startIndex}
-                        colSpan={group.colSpan}
-                        className={`ts-grid__slot ${typed ? `ts-grid__slot--${group.type.toLowerCase()}` : ''}`}
-                      >
-                        {group.filled ? (
-                          <div className="ts-grid__cell-inner">
-                            {group.description && <span className="ts-grid__cell-text">{group.description}</span>}
-                            {typed && (
-                              <span className={`ts-grid__type-tag ts-grid__type-tag--${group.type.toLowerCase()}`}>
-                                {group.type}
-                              </span>
-                            )}
-                          </div>
-                        ) : '—'}
-                      </td>
-                    );
-                  })}
-                  <td className="ts-grid__total-cell">{formatHours(detail.totalHours)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {detail && editing && (
-          <div className="flex flex-col gap-4">
-            <div className="ts-grid-container" style={{ margin: 0 }}>
-              <table className="ts-grid">
-                <thead>
-                  <tr>
-                    {GRID_HOURS.map(h => (
-                      <th key={h}>{h}{h === 1 ? 'st' : h === 2 ? 'nd' : h === 3 ? 'rd' : 'th'} Hour</th>
-                    ))}
-                    <th>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    {GRID_HOURS.map((h, idx) => (
-                      <td key={h}>
-                        <input
-                          className="ts-grid__input"
-                          value={draftEntries[idx]}
-                          onChange={(e) => updateDraft(idx, e.target.value)}
-                          placeholder="-"
-                        />
-                      </td>
-                    ))}
-                    <td className="ts-grid__total-cell">{formatHours(draftTotal)}</td>
-                  </tr>
-                </tbody>
-              </table>
+        {detail && (
+          <div className="history-modal__content">
+            <div className="history-modal__summary">
+              <div className="history-modal__metric">
+                <span className="history-modal__metric-icon is-hours"><Clock size={17} /></span>
+                <span className="history-modal__metric-copy">
+                  <span className="history-modal__metric-label">Hours logged</span>
+                  <strong>{formatHours(editing ? draftTotal : detail.totalHours)}</strong>
+                </span>
+              </div>
+              <div className="history-modal__metric">
+                <span className="history-modal__metric-icon is-entries"><History size={17} /></span>
+                <span className="history-modal__metric-copy">
+                  <span className="history-modal__metric-label">Entries</span>
+                  <strong>{detail.entries?.length || 0}</strong>
+                </span>
+              </div>
+              <div className="history-modal__goal">
+                <div className="history-modal__goal-head">
+                  <span>Daily goal</span>
+                  <strong>{formatNum(editing ? draftTotal : detail.totalHours)} / {DAILY_TARGET}h</strong>
+                </div>
+                <div
+                  className="history-modal__goal-track"
+                  role="progressbar"
+                  aria-label="Daily goal progress"
+                  aria-valuemin={0}
+                  aria-valuemax={DAILY_TARGET}
+                  aria-valuenow={Math.min(DAILY_TARGET, editing ? draftTotal : detail.totalHours || 0)}
+                >
+                  <span
+                    style={{
+                      width: `${Math.min(100, ((editing ? draftTotal : detail.totalHours || 0) / DAILY_TARGET) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <span className="history-modal__goal-note">
+                  {Math.max(0, DAILY_TARGET - (editing ? draftTotal : detail.totalHours || 0)) > 0
+                    ? `${formatHours(Math.max(0, DAILY_TARGET - (editing ? draftTotal : detail.totalHours || 0)))} to daily goal`
+                    : 'Daily goal reached'}
+                </span>
+              </div>
             </div>
+
+            <div className="history-modal__grid-head">
+              <div>
+                <h3>{editing ? 'Edit hourly entries' : 'Hourly breakdown'}</h3>
+                <p>{editing ? 'Update the description for each hour.' : 'Your logged activity across the day.'}</p>
+              </div>
+              <span className="history-modal__scroll-hint">Scroll to view all hours</span>
+            </div>
+
+            {!editing && (
+              <div className="ts-grid-container history-modal__grid" style={{ margin: 0 }}>
+                <table className="ts-grid">
+                  <thead>
+                    <tr>
+                      {GRID_HOURS.map(h => (
+                        <th key={h}>{h}{h === 1 ? 'st' : h === 2 ? 'nd' : h === 3 ? 'rd' : 'th'} Hour</th>
+                      ))}
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      {groupSlots(expandEntries(detail.entries)).map((group) => {
+                        const typed = isTypedEntry(group.type);
+                        return (
+                          <td
+                            key={group.startIndex}
+                            colSpan={group.colSpan}
+                            className={`ts-grid__slot ${typed ? `ts-grid__slot--${group.type.toLowerCase()}` : ''}`}
+                          >
+                            {group.filled ? (
+                              <div className="ts-grid__cell-inner">
+                                {group.description && <span className="ts-grid__cell-text">{group.description}</span>}
+                                {typed && (
+                                  <span className={`ts-grid__type-tag ts-grid__type-tag--${group.type.toLowerCase()}`}>
+                                    {group.type}
+                                  </span>
+                                )}
+                              </div>
+                            ) : '—'}
+                          </td>
+                        );
+                      })}
+                      <td className="ts-grid__total-cell">{formatHours(detail.totalHours)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {editing && (
+              <div className="ts-grid-container history-modal__grid" style={{ margin: 0 }}>
+                <table className="ts-grid">
+                  <thead>
+                    <tr>
+                      {GRID_HOURS.map(h => (
+                        <th key={h}>{h}{h === 1 ? 'st' : h === 2 ? 'nd' : h === 3 ? 'rd' : 'th'} Hour</th>
+                      ))}
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      {GRID_HOURS.map((h, idx) => {
+                        const slot = draftEntries[idx] || { description: '', type: 'Work' };
+                        return (
+                          <td key={h}>
+                            <input
+                              className="ts-grid__input"
+                              value={slot.description}
+                              onChange={(e) => updateDraft(idx, e.target.value)}
+                              placeholder={isTypedEntry(slot.type) ? slot.type : '-'}
+                            />
+                          </td>
+                        );
+                      })}
+                      <td className="ts-grid__total-cell">{formatHours(draftTotal)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </Modal>
