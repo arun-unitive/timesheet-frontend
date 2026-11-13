@@ -239,7 +239,7 @@ export default function Employees() {
             style={{ width: 150 }}
             aria-label="Filter by status"
           >
-            <option value="">All statuses</option>
+            <option value="">All status</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </Select>
