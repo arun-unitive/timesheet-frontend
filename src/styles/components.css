@@ -2009,6 +2009,132 @@
   }
 }
 
+/* ==========================================================================
+   My Leaves - lists for assigned leaves and comp-off days
+   ========================================================================== */
+
+.leave-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.leave-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition);
+}
+
+.leave-row:last-child {
+  border-bottom: none;
+}
+
+.leave-row:hover {
+  background: var(--bg-subtle);
+}
+
+/* A leave running today gets a green accent. */
+.leave-row--ongoing {
+  box-shadow: inset 3px 0 0 var(--success);
+}
+
+/* Date chip */
+.leave-row__date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  padding: var(--sp-2) var(--sp-1);
+  border-radius: var(--r-md);
+  background: var(--primary-50);
+  color: var(--primary-700);
+}
+
+.leave-row--ongoing .leave-row__date {
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+
+.leave-row--past .leave-row__date {
+  background: var(--bg-inset);
+  color: var(--text-muted);
+}
+
+.leave-row--compoff .leave-row__date {
+  background: var(--primary-100);
+  color: var(--primary-800);
+}
+
+.leave-row__daynum {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.leave-row__mon {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+/* Details */
+.leave-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.leave-row__title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.leave-row__period {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.leave-row__reason {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+/* Status / countdown column */
+.leave-row__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  text-align: right;
+}
+
+.leave-row__when {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+@media (max-width: 560px) {
+  .leave-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .leave-row__side {
+    grid-column: 2;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+}
+
 /* My History day detail popup */
 .modal.history-modal {
   max-width: min(1120px, calc(100vw - 32px));

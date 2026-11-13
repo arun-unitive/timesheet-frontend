@@ -395,7 +395,8 @@ function LeaveFormModal({ open, onClose, leave, employees }) {
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }));
   };
 
-  const previewDays = countDays(form.startDate, form.endDate);
+  const previewDays = countDays(form.startDate, form.endDate || form.startDate);
+
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -404,8 +405,9 @@ function LeaveFormModal({ open, onClose, leave, employees }) {
     if (!form.leaveType) next.leaveType = 'Select a leave type';
     if (form.scope === 'individual' && !form.employee) next.employee = 'Select an employee';
     if (!form.startDate) next.startDate = 'Select a start date';
-    if (!form.endDate) next.endDate = 'Select an end date';
-    else if (form.startDate && form.endDate < form.startDate) next.endDate = 'End date must be on or after the start date';
+    if (form.endDate && form.startDate && form.endDate < form.startDate) {
+      next.endDate = 'End date must be on or after the start date';
+    }
     setErrors(next);
     if (Object.keys(next).length) return;
 
@@ -416,7 +418,7 @@ function LeaveFormModal({ open, onClose, leave, employees }) {
       description: form.description.trim() || undefined,
       reason: form.reason.trim() || undefined,
       startDate: form.startDate,
-      endDate: form.endDate,
+      endDate: form.endDate || form.startDate,
     };
     if (form.scope === 'individual') payload.employee = form.employee;
     mutation.mutate(payload);
@@ -504,7 +506,12 @@ function LeaveFormModal({ open, onClose, leave, employees }) {
           />
         </Field>
 
-        <Field label="End date" htmlFor="leave-end" required error={errors.endDate}>
+        <Field
+          label="End date"
+          htmlFor="leave-end"
+          error={errors.endDate}
+          hint="Optional — leave blank for a single-day leave."
+        >
           <Input
             id="leave-end"
             type="date"
@@ -520,28 +527,28 @@ function LeaveFormModal({ open, onClose, leave, employees }) {
             <span>
               {previewDays
                 ? `${previewDays} day(s) will be recorded for this leave.`
-                : 'Select a valid start and end date to see the duration.'}
+                : 'Select a start date to see the duration.'}
             </span>
           </div>
         </div>
 
-        <Field className="span-2" label="Description" htmlFor="leave-description">
+        {/* <Field className="span-2" label="Description" htmlFor="leave-description">
           <Textarea
             id="leave-description"
             value={form.description}
             onChange={update('description')}
             placeholder="Optional details about this leave."
           />
-        </Field>
+        </Field> */}
 
-        <Field className="span-2" label="Reason" htmlFor="leave-reason">
+        {/* <Field className="span-2" label="Reason" htmlFor="leave-reason">
           <Input
             id="leave-reason"
             value={form.reason}
             onChange={update('reason')}
             placeholder="Optional reason shown to employees."
           />
-        </Field>
+        </Field> */}
       </form>
     </Modal>
   );

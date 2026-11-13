@@ -1,187 +1,255 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CalendarCheck, CalendarDays, Plane } from 'lucide-react';
+import { CalendarCheck, Plane } from 'lucide-react';
 import PageHead from '../../components/layout/PageHead';
 import Card from '../../components/ui/Card';
 import Tabs from '../../components/ui/Tabs';
-import StatCard from '../../components/ui/StatCard';
 import EmptyState from '../../components/ui/EmptyState';
-import DataTable from '../../components/ui/DataTable';
-import { LeaveTypeBadge } from '../../components/ui/Badge';
+import Badge, { LeaveTypeBadge } from '../../components/ui/Badge';
 import { CardSkeleton } from '../../components/ui/Loader';
 import { leaveApi } from '../../api/leaves';
 import { qk } from '../../api/queryKeys';
-import { formatDate } from '../../lib/format';
+import { formatDate, formatDateCompact, parseISO, todayISO } from '../../lib/format';
 
 /** Collapse a single-day range into one date. */
 const formatRange = (start, end) => (start === end ? formatDate(start) : `${formatDate(start)} – ${formatDate(end)}`);
 
-/** Employee leave overview: holidays, comp-off balance and granted leaves. */
+/** Whole days between a date and today (negative = already past). */
+const daysFromToday = (iso, today) =>
+  Math.round((parseISO(iso).getTime() - parseISO(today).getTime()) / 86400000);
+
+/** "Today" / "Tomorrow" / "in 5 days" */
+const countdown = (iso, today) => {
+  const diff = daysFromToday(iso, today);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff > 1) return `in ${diff} days`;
+  return `${Math.abs(diff)} day(s) ago`;
+};
+
+const STATUS_META = {
+  ongoing: { label: 'Ongoing', tone: 'success' },
+  upcoming: { label: 'Upcoming', tone: 'info' },
+  past: { label: 'Completed', tone: 'neutral' },
+};
+
+/** Past / current / upcoming, based on today's date. */
+const statusOf = (leave, today) => {
+  if (leave.startDate > today) return 'upcoming';
+  if (leave.endDate < today) return 'past';
+  return 'ongoing';
+};
+
+const GROUP_ORDER = { ongoing: 0, upcoming: 1, past: 2 };
+
+/** Ongoing first, then the soonest upcoming, then the most recent past. */
+const sortByStatus = (leaves, today) =>
+  [...leaves].sort((a, b) => {
+    const groupA = GROUP_ORDER[statusOf(a, today)];
+    const groupB = GROUP_ORDER[statusOf(b, today)];
+    if (groupA !== groupB) return groupA - groupB;
+    return groupA === GROUP_ORDER.past
+      ? b.startDate.localeCompare(a.startDate)
+      : a.startDate.localeCompare(b.startDate);
+  });
+
+/** Date chip shared by both lists. */
+function DateChip({ iso }) {
+  const [day, month] = formatDateCompact(iso).split(' ');
+  return (
+    <div className="leave-row__date">
+      <span className="leave-row__daynum">{day}</span>
+      <span className="leave-row__mon">{month}</span>
+    </div>
+  );
+}
+
+/** One leave assigned to the employee. */
+function LeaveRow({ leave, today }) {
+  const status = statusOf(leave, today);
+  const meta = STATUS_META[status];
+  const endsIn = daysFromToday(leave.endDate, today);
+
+  return (
+    <div className={`leave-row leave-row--${status}`}>
+      <DateChip iso={leave.startDate} />
+
+      <div className="leave-row__main">
+        <div className="leave-row__title">
+          <span className="fw-medium">{leave.title || 'Leave'}</span>
+          <LeaveTypeBadge type={leave.leaveType} />
+        </div>
+        <div className="leave-row__period">
+          {formatRange(leave.startDate, leave.endDate)}
+          {` · ${leave.days ?? 1} day(s)`}
+        </div>
+        {leave.reason && <div className="leave-row__reason">{leave.reason}</div>}
+      </div>
+
+      <div className="leave-row__side">
+        <Badge tone={meta.tone} dot>
+          {meta.label}
+        </Badge>
+        {status === 'ongoing' && (
+          <span className="leave-row__when">{endsIn === 0 ? 'Ends today' : `Ends in ${endsIn} day(s)`}</span>
+        )}
+        {status === 'upcoming' && (
+          <span className="leave-row__when">{countdown(leave.startDate, today)}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One comp-off day assigned to the employee. */
+function CompOffRow({ record }) {
+  return (
+    <div className="leave-row leave-row--compoff">
+      <DateChip iso={record.startDate} />
+
+      <div className="leave-row__main">
+        <div className="leave-row__title">
+          <span className="fw-medium">{record.title || 'Comp-off'}</span>
+        </div>
+        <div className="leave-row__period">{formatRange(record.startDate, record.endDate)}</div>
+        {record.reason && <div className="leave-row__reason">{record.reason}</div>}
+      </div>
+
+      <div className="leave-row__side">
+        <Badge tone="primary">{record.days ?? 1} day(s)</Badge>
+      </div>
+    </div>
+  );
+}
+
+/** Leaves and comp-off days assigned to the signed-in employee. */
 export default function MyLeaves() {
+  const today = todayISO();
   const [tab, setTab] = useState('all');
 
-  const mineQuery = useQuery({
-    queryKey: qk.leavesMine,
-    queryFn: async () => (await leaveApi.mine()).data,
+  // The leaves list endpoint already applies the employee visibility filter,
+  // which includes both personally-assigned leaves and company-wide (common)
+  // leaves. Using it here (rather than /leaves/mine) makes sure common leaves
+  // show up even against backends where /leaves/mine only returns individual
+  // leaves.
+  const leavesQuery = useQuery({
+    queryKey: qk.leaves({ limit: 100 }),
+    queryFn: async () => (await leaveApi.list({ limit: 100 })).data,
     staleTime: 60_000,
   });
 
-  const upcomingQuery = useQuery({
-    queryKey: qk.leavesUpcoming,
-    queryFn: async () => (await leaveApi.upcoming(180)).data,
-    staleTime: 60_000,
-  });
+  const allLeaves = leavesQuery.data?.items || leavesQuery.data || [];
 
-  const leaves = mineQuery.data?.leaves || [];
-  const compOff = mineQuery.data?.compOff || { balanceDays: 0, records: [] };
-  const upcoming = upcomingQuery.data || [];
-  const holidays = upcoming.filter((leave) => leave.scope === 'common');
-
-  const rows = useMemo(
-    () => (tab === 'comp-off' ? leaves.filter((leave) => leave.leaveType === 'comp-off') : leaves),
-    [tab, leaves]
+  // Comp-off days have their own section; the rest go into the leaves list.
+  const leaves = useMemo(
+    () => allLeaves.filter((leave) => leave.leaveType !== 'comp-off'),
+    [allLeaves]
   );
 
-  const columns = useMemo(
-    () => [
-      {
-        key: 'title',
-        header: 'Title',
-        strong: true,
-        render: (row) => (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span>{row.title || '—'}</span>
-            <LeaveTypeBadge type={row.leaveType} />
-          </div>
-        ),
-      },
-      { key: 'period', header: 'Period', render: (row) => formatRange(row.startDate, row.endDate) },
-      { key: 'days', header: 'Days', align: 'right', render: (row) => row.days },
-      { key: 'reason', header: 'Reason', render: (row) => row.reason || '—' },
-      // { key: 'createdAt', header: 'Granted on', render: (row) => formatDate(row.createdAt) },
-    ],
-    []
+  const compOffRecords = useMemo(
+    () => allLeaves.filter((leave) => leave.leaveType === 'comp-off'),
+    [allLeaves]
   );
+
+  // Only personally-granted comp-offs count toward the available balance.
+  const compOffBalance = useMemo(
+    () => compOffRecords.reduce((sum, leave) => (leave.employee ? sum + (leave.days || 0) : sum), 0),
+    [compOffRecords]
+  );
+
+  const sorted = useMemo(() => sortByStatus(leaves, today), [leaves, today]);
+  const compOffRows = useMemo(() => sortByStatus(compOffRecords, today), [compOffRecords, today]);
+
+  const counts = useMemo(
+    () =>
+      sorted.reduce(
+        (acc, leave) => {
+          acc[statusOf(leave, today)] += 1;
+          return acc;
+        },
+        { ongoing: 0, upcoming: 0, past: 0 }
+      ),
+    [sorted, today]
+  );
+
+  const visible = tab === 'all' ? sorted : sorted.filter((leave) => statusOf(leave, today) === tab);
+
+  const tabOptions = [
+    { value: 'all', label: `All (${sorted.length})` },
+    { value: 'ongoing', label: `Ongoing (${counts.ongoing})` },
+    { value: 'upcoming', label: `Upcoming (${counts.upcoming})` },
+    { value: 'past', label: `Past (${counts.past})` },
+  ];
+
+  const emptyCopy = {
+    all: 'Leaves assigned to you will appear here.',
+    ongoing: 'You are not on leave right now.',
+    upcoming: 'You have no leaves scheduled ahead.',
+    past: 'You have not taken any leave yet.',
+  };
 
   return (
     <div className="page">
-      <PageHead title="My Leave" subtitle="Your holidays, comp-off balance and granted leaves." />
+      <PageHead title="My Leave" subtitle="Leaves and comp-off days assigned to you." />
 
-      <div className="stat-grid">
-        <StatCard
-          label="Comp-off balance"
-          value={`${compOff.balanceDays} day(s)`}
-          icon={Plane}
-          tone="success"
-          loading={mineQuery.isLoading}
-        />
-        <StatCard
-          label="Upcoming holidays"
-          value={holidays.length}
-          icon={CalendarDays}
-          tone="info"
-          loading={upcomingQuery.isLoading}
-        />
-        <StatCard
-          label="Total leaves granted"
-          value={leaves.length}
-          icon={CalendarCheck}
-          tone="primary"
-          loading={mineQuery.isLoading}
-        />
-      </div>
+      <Card
+        title="My leaves"
+        subtitle="Every leave assigned to you — past, current and upcoming."
+        action={
+          sorted.length ? (
+            <span className="text-xs text-muted">
+              {counts.ongoing} ongoing · {counts.upcoming} upcoming · {counts.past} past
+            </span>
+          ) : null
+        }
+        flush
+      >
+        <div className="toolbar">
+          <Tabs value={tab} onChange={setTab} options={tabOptions} />
+        </div>
 
-      <Card title="Upcoming holidays" subtitle="Company holidays and your leaves over the next 180 days" flush>
-        {upcomingQuery.isLoading ? (
-          <div style={{ padding: 16 }}>
-            <CardSkeleton height={90} />
+        {leavesQuery.isLoading ? (
+          <div style={{ padding: 'var(--sp-5)' }}>
+            <CardSkeleton height={120} />
           </div>
-        ) : upcoming.length ? (
-          <div>
-            {upcoming.map((leave) => (
-              <div className="list-item" key={leave._id}>
-                <div className="flex-1" style={{ minWidth: 0 }}>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="fw-medium">{leave.title || 'Holiday'}</span>
-                    <LeaveTypeBadge type={leave.leaveType} />
-                  </div>
-                  <div className="text-xs text-muted mt-1">
-                    {formatRange(leave.startDate, leave.endDate)}
-                    {leave.description ? ` · ${leave.description}` : ''}
-                  </div>
-                </div>
-              </div>
+        ) : visible.length ? (
+          <div className="leave-list">
+            {visible.map((leave) => (
+              <LeaveRow key={leave._id} leave={leave} today={today} />
             ))}
           </div>
         ) : (
           <EmptyState
-            icon={CalendarDays}
-            title="No upcoming holidays"
-            message="Nothing is scheduled for the coming months."
+            icon={CalendarCheck}
+            title={tab === 'all' ? 'No leaves found' : `No ${STATUS_META[tab].label.toLowerCase()} leaves`}
+            message={emptyCopy[tab]}
           />
         )}
       </Card>
 
-      <Card title="Comp-off details" subtitle="Days earned from extra work">
-        {mineQuery.isLoading ? (
-          <CardSkeleton height={100} />
+      <Card
+        title="Comp-off days"
+        subtitle="Comp-off days assigned to you."
+        action={<Badge tone="primary">{compOffBalance} day(s) available</Badge>}
+        flush
+      >
+        {leavesQuery.isLoading ? (
+          <div style={{ padding: 'var(--sp-5)' }}>
+            <CardSkeleton height={120} />
+          </div>
+        ) : compOffRows.length ? (
+          <div className="leave-list">
+            {compOffRows.map((record) => (
+              <CompOffRow key={record._id} record={record} />
+            ))}
+          </div>
         ) : (
-          <>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl fw-bold tabular">{compOff.balanceDays}</span>
-              <span className="text-muted">day(s) available</span>
-            </div>
-
-            {compOff.records?.length ? (
-              <div className="mt-4">
-                {compOff.records.map((record) => (
-                  <div className="list-item" key={record._id} style={{ paddingLeft: 0, paddingRight: 0 }}>
-                    <div className="flex-1" style={{ minWidth: 0 }}>
-                      <div className="fw-medium">{formatRange(record.startDate, record.endDate)}</div>
-                      {record.reason && <div className="text-xs text-muted mt-1">{record.reason}</div>}
-                    </div>
-                    <span className="badge badge--primary">{record.days} day(s)</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-4">
-                <EmptyState
-                  icon={Plane}
-                  title="No comp-off records"
-                  message="Extra hours you work will show up here."
-                />
-              </div>
-            )}
-          </>
-        )}
-      </Card>
-
-      <Card title="Leave history" subtitle="Leaves granted to you" flush>
-        <div className="toolbar">
-          <Tabs
-            value={tab}
-            onChange={setTab}
-            options={[
-              { value: 'all', label: 'All' },
-              { value: 'comp-off', label: 'Comp-Off' },
-            ]}
+          <EmptyState
+            icon={Plane}
+            title="No comp-off days"
+            message="Comp-off days granted to you will appear here."
           />
-        </div>
-
-        <DataTable
-          columns={columns}
-          rows={rows}
-          loading={mineQuery.isLoading}
-          rowKey={(row) => row._id}
-          empty={
-            <EmptyState
-              icon={CalendarCheck}
-              title="No leaves found"
-              message="Leaves granted to you will appear here."
-            />
-          }
-        />
+        )}
       </Card>
     </div>
   );
