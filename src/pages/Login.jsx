@@ -153,10 +153,10 @@ export default function Login() {
             </Button>
           </div>
 
-          <div className="auth__demo">
+          {/* <div className="auth__demo">
             <strong>Demo admin:</strong> admin@company.com / Admin@123 — employees use the credentials
             created by an administrator.
-          </div>
+          </div> */}
         </form>
       </div>
     </div>
