@@ -39,7 +39,7 @@ export default function MyHistory() {
   const { user } = useAuth();
   const today = todayISO();
   const [monthStart, setMonthStart] = useState(() => startOfMonthISO(today));
-  const [jumpTick, setJumpTick] = useState(0);
+  const [jumpTick, setJumpTick] = useState(1);
   const gridRef = useRef(null);
   const monthEnd = endOfMonthISO(monthStart);
   const myId = user?._id || user?.id || null;
@@ -116,15 +116,15 @@ export default function MyHistory() {
     setJumpTick((tick) => tick + 1);
   };
 
+  const isLoading = timesheetsLoading || leavesLoading;
+
   useEffect(() => {
-    if (!jumpTick) return;
+    if (!jumpTick || isLoading) return;
     const node = gridRef.current?.querySelector(`[data-date="${today}"]`);
     if (!node) return;
     node.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setJumpTick(0);
-  }, [jumpTick, today, sheetByDate]);
-
-  const isLoading = timesheetsLoading || leavesLoading;
+  }, [jumpTick, isLoading, today, sheetByDate]);
 
   return (
     <div className="page">

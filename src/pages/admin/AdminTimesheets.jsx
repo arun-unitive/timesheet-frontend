@@ -34,7 +34,7 @@ export default function AdminTimesheets() {
   const today = todayISO();
   const [monthStart, setMonthStart] = useState(() => startOfMonthISO(today));
   const [employeeIds, setEmployeeIds] = useState([]);
-  const [jumpTick, setJumpTick] = useState(0);
+  const [jumpTick, setJumpTick] = useState(1);
   const gridRef = useRef(null);
   const monthEnd = endOfMonthISO(monthStart);
 
@@ -153,15 +153,15 @@ export default function AdminTimesheets() {
     setJumpTick((tick) => tick + 1);
   };
 
+  const isLoading = employeesLoading || timesheetsLoading || leavesLoading;
+
   useEffect(() => {
-    if (!jumpTick) return;
+    if (!jumpTick || isLoading) return;
     const node = gridRef.current?.querySelector(`[data-date="${today}"]`);
     if (!node) return;
     node.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setJumpTick(0);
-  }, [jumpTick, today, grid]);
-
-  const isLoading = employeesLoading || timesheetsLoading || leavesLoading;
+  }, [jumpTick, isLoading, today, grid]);
 
   return (
     <div className="page">
