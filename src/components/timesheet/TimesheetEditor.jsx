@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save, Info, Edit3, Trash2 } from 'lucide-react';
+import { Info, Edit3, Trash2, AlertTriangle } from 'lucide-react';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
 import Field from '../ui/Field';
 import Tabs from '../ui/Tabs';
 import { Textarea, Select } from '../ui/Input';
 import { useAuth } from '../../context/AuthContext';
-import { useUnsavedChanges } from '../../context/UnsavedChangesContext';
 import { timesheetApi } from '../../api/timesheets';
 import { qk } from '../../api/queryKeys';
 import { GRID_HOURS } from '../../lib/constants';
@@ -27,6 +26,8 @@ const EDIT_MODES = [
   { value: 'typed', label: 'Permission / Leave' },
 ];
 
+const formatOrdinal = (h) => `${h}${h === 1 ? 'st' : h === 2 ? 'nd' : h === 3 ? 'rd' : 'th'}`;
+
 /**
  * Visible content of the hour slots, ignoring entry identity.
  * Comparing this against the saved slots tells us if a row has unsaved edits.
@@ -43,15 +44,17 @@ function TimesheetRow({
   leave, 
   onSave, 
   isSaving,
-  onDirtyChange,
-  registerSaver
+  selectedIndices,
+  onSelectIndices
 }) {
   const [cells, setCells] = useState(() => Array.from({ length: SLOT_COUNT }, makeEmptySlot));
-  const [selectedIndices, setSelectedIndices] = useState([]);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [warningHours, setWarningHours] = useState([]);
   const [editMode, setEditMode] = useState('description');
   const [editValue, setEditValue] = useState('');
   const [editType, setEditType] = useState('Permission');
+  const selectionSnapshotRef = useRef([]);
+  const lastSavedSigRef = useRef(null);
 
   const persistedSlots = useMemo(() => expandEntries(sheet?.entries, SLOT_COUNT), [sheet?.entries]);
   const persistedSignature = useMemo(() => slotSignature(persistedSlots), [persistedSlots]);
@@ -59,17 +62,13 @@ function TimesheetRow({
   // Re-seed the grid only when the saved content actually changes, so a refetch
   // triggered elsewhere never wipes edits the user has not saved yet.
   useEffect(() => {
+    if (lastSavedSigRef.current === persistedSignature) {
+      return;
+    }
     setCells(expandEntries(sheet?.entries, SLOT_COUNT));
-    setSelectedIndices([]);
+    onSelectIndices([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [persistedSignature]);
-
-  const isDirty = useMemo(() => slotSignature(cells) !== persistedSignature, [cells, persistedSignature]);
-
-  // Let the parent editor know this row has pending changes.
-  useEffect(() => {
-    onDirtyChange?.(date, isDirty);
-  }, [date, isDirty, onDirtyChange]);
 
   // Every filled slot counts as one working hour, including Permission / Leave.
   const totalHours = cells.filter(isFilledSlot).length;
@@ -79,20 +78,47 @@ function TimesheetRow({
   // Group every run of slots that belong to the same entry into one shared column.
   const groupedCells = useMemo(() => groupSlots(cells), [cells]);
 
+  const getMissingPreviousHours = (candidateIndices) => {
+    if (candidateIndices.length === 0) return [];
+    const maxIdx = Math.max(...candidateIndices);
+    const missing = [];
+    for (let i = 0; i < maxIdx; i += 1) {
+      if (!isFilledSlot(cells[i]) && !candidateIndices.includes(i)) {
+        missing.push(GRID_HOURS[i]);
+      }
+    }
+    return missing;
+  };
+
+  const handleCellMouseDown = (e) => {
+    if (e.detail === 1) {
+      selectionSnapshotRef.current = selectedIndices;
+    }
+  };
+
   const toggleGroupSelection = (indices) => {
-    if (locked) return;
+    if (locked || isSaving) return;
     const allSelected = indices.every(idx => selectedIndices.includes(idx));
     if (allSelected) {
-      setSelectedIndices(prev => prev.filter(idx => !indices.includes(idx)));
-    } else {
-      setSelectedIndices(prev => [...new Set([...prev, ...indices])]);
+      onSelectIndices(selectedIndices.filter(idx => !indices.includes(idx)));
+      return;
     }
+
+    const nextIndices = [...new Set([...selectedIndices, ...indices])];
+    const missing = getMissingPreviousHours(nextIndices);
+    if (missing.length > 0) {
+      setWarningHours(missing);
+      return;
+    }
+
+    onSelectIndices(nextIndices);
   };
 
   const openEditFor = (indices) => {
     if (indices.length === 0) return;
     // Seed the form with the values of the first selected slot.
-    const firstSelected = cells[indices[0]];
+    const firstFilledIdx = indices.find(idx => isFilledSlot(cells[idx])) ?? indices[0];
+    const firstSelected = cells[firstFilledIdx];
     setEditValue(firstSelected.description || '');
     if (isTypedEntry(firstSelected.type)) {
       setEditMode('typed');
@@ -104,13 +130,61 @@ function TimesheetRow({
     setShowEditModal(true);
   };
 
-  const handleOpenEdit = () => openEditFor(selectedIndices);
+  const handleOpenEdit = () => {
+    const missing = getMissingPreviousHours(selectedIndices);
+    if (missing.length > 0) {
+      setWarningHours(missing);
+      return;
+    }
+    openEditFor(selectedIndices);
+  };
 
   // Double-clicking a slot selects that entry and opens the edit popup.
   const handleGroupDoubleClick = (indices) => {
-    if (locked) return;
-    setSelectedIndices(indices);
-    openEditFor(indices);
+    if (locked || isSaving) return;
+    const beforeDoubleClick = selectionSnapshotRef.current;
+    const targetIndices =
+      beforeDoubleClick.length > 0
+        ? [...new Set([...beforeDoubleClick, ...indices])]
+        : indices;
+
+    const missing = getMissingPreviousHours(targetIndices);
+    if (missing.length > 0) {
+      setWarningHours(missing);
+      return;
+    }
+
+    onSelectIndices(targetIndices);
+    openEditFor(targetIndices);
+  };
+
+  const triggerAutoSave = (nextCells) => {
+    // One entry per run of consecutive slots that share an entryId.
+    const entries = [];
+    for (let i = 0; i < nextCells.length; ) {
+      const cell = nextCells[i];
+      if (!cell.entryId || !isFilledSlot(cell)) {
+        i += 1;
+        continue;
+      }
+
+      let hours = 1;
+      while (i + 1 < nextCells.length && nextCells[i + 1].entryId === cell.entryId) {
+        hours += 1;
+        i += 1;
+      }
+
+      entries.push({
+        project: 'General',
+        description: cell.description.trim(),
+        type: cell.type,
+        hours,
+      });
+      i += 1;
+    }
+
+    lastSavedSigRef.current = slotSignature(expandEntries(entries, SLOT_COUNT));
+    onSave(date, entries, sheet?._id);
   };
 
   const handleApplyEdit = () => {
@@ -126,7 +200,8 @@ function TimesheetRow({
     });
     setCells(next);
     setShowEditModal(false);
-    setSelectedIndices([]);
+    onSelectIndices([]);
+    triggerAutoSave(next);
   };
 
   // Clearing the selected slots removes the task; saving then persists the day.
@@ -136,49 +211,40 @@ function TimesheetRow({
       selectedIndices.includes(idx) ? makeEmptySlot() : { ...cell }
     );
     setCells(next);
-    setSelectedIndices([]);
+    onSelectIndices([]);
+    triggerAutoSave(next);
   };
-
-  const onLocalSave = () => {
-    // One entry per run of consecutive slots that share an entryId.
-    const entries = [];
-    for (let i = 0; i < cells.length; ) {
-      const cell = cells[i];
-      if (!cell.entryId || !isFilledSlot(cell)) {
-        i += 1;
-        continue;
-      }
-
-      let hours = 1;
-      while (i + 1 < cells.length && cells[i + 1].entryId === cell.entryId) {
-        hours += 1;
-        i += 1;
-      }
-
-      entries.push({
-        project: 'General',
-        description: cell.description.trim(),
-        type: cell.type,
-        hours,
-      });
-      i += 1;
-    }
-
-    onSave(date, entries, sheet?._id);
-  };
-
-  // Expose this row's save handler so the editor can bind Ctrl/Cmd + S.
-  useEffect(() => {
-    registerSaver?.(date, onLocalSave);
-    return () => registerSaver?.(date, null);
-  });
 
   return (
     <>
       <tr className={`ts-grid__row ${leave ? 'ts-grid__row--leave' : ''}`}>
         <td className="ts-grid__date-cell">
           <div className="ts-grid__date-info">
-            <span className="ts-grid__date-text">{formatDateCompact(date)}</span>
+            <div className="flex items-center justify-between gap-1">
+              <span className="ts-grid__date-text">{formatDateCompact(date)}</span>
+              {!locked && selectedIndices.length > 0 && (
+                <div className="flex items-center gap-0.5">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="!p-1 !h-6 !w-6"
+                    icon={Edit3}
+                    onClick={handleOpenEdit}
+                    disabled={isSaving}
+                    title="Edit selected cells"
+                  />
+                  <Button 
+                    variant="danger" 
+                    size="sm" 
+                    className="!p-1 !h-6 !w-6"
+                    icon={Trash2}
+                    onClick={handleDeleteSelected}
+                    loading={isSaving}
+                    title="Delete selected task"
+                  />
+                </div>
+              )}
+            </div>
             <span className="ts-grid__day-text">{weekdayName(date)}</span>
             {leave && (
               <div className="ts-grid__leave-indicator">
@@ -197,6 +263,7 @@ function TimesheetRow({
             <td key={group.startIndex} colSpan={group.colSpan}>
               <div
                 className={`ts-grid__cell-content ${isSelected ? 'selected' : ''} ${locked ? 'disabled' : ''} ts-grid__cell-content--${group.type.toLowerCase()}`}
+                onMouseDown={handleCellMouseDown}
                 onClick={() => toggleGroupSelection(group.indices)}
                 onDoubleClick={() => handleGroupDoubleClick(group.indices)}
               >
@@ -219,43 +286,26 @@ function TimesheetRow({
         <td className="ts-grid__total-cell">
           {formatHours(totalHours)}
         </td>
-        <td className="ts-grid__action-cell">
-          <div className="flex gap-1 justify-center">
-            {!locked && (
-              <>
-                {selectedIndices.length > 0 && (
-                  <>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      icon={Edit3}
-                      onClick={handleOpenEdit}
-                      title="Edit selected cells"
-                    />
-                    <Button 
-                      variant="danger" 
-                      size="sm" 
-                      icon={Trash2}
-                      onClick={handleDeleteSelected}
-                      title="Delete selected task"
-                    />
-                  </>
-                )}
-                <Button 
-                  variant={sheet ? "ghost" : "primary"} 
-                  size="sm" 
-                  icon={Save} 
-                  onClick={onLocalSave}
-                  loading={isSaving}
-                  title="Save row"
-                >
-                  {!sheet && "Save"}
-                </Button>
-              </>
-            )}
-          </div>
-        </td>
       </tr>
+
+      <Modal
+        open={warningHours.length > 0}
+        onClose={() => setWarningHours([])}
+        title="Previous Hours Required"
+        subtitle={formatDateCompact(date)}
+        footer={
+          <Button variant="primary" onClick={() => setWarningHours([])}>
+            OK, Got It
+          </Button>
+        }
+      >
+        <div className="flex items-start gap-3 p-3 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-600 text-sm">
+          <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+          <span>
+            Please fill the previous hour(s) (<strong>{warningHours.map(formatOrdinal).join(', ')} Hour</strong>) before updating this column.
+          </span>
+        </div>
+      </Modal>
 
       <Modal
         open={showEditModal}
@@ -265,7 +315,7 @@ function TimesheetRow({
         footer={
           <>
             <Button variant="secondary" onClick={() => setShowEditModal(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleApplyEdit}>Apply Change</Button>
+            <Button variant="primary" onClick={handleApplyEdit} loading={isSaving}>Apply Change</Button>
           </>
         }
       >
@@ -314,41 +364,16 @@ export default function TimesheetEditor({
   onSaved
 }) {
   const queryClient = useQueryClient();
-  const { setDirty } = useUnsavedChanges();
   const [savingDate, setSavingDate] = useState(null);
-  const dirtyDatesRef = useRef(new Set());
-  const rowSaversRef = useRef(new Map());
+  const [selection, setSelection] = useState({ date: null, indices: [] });
 
-  // Any row with pending edits keeps the page "dirty" for the navigation guard.
-  const handleRowDirty = useCallback(
-    (date, isDirty) => {
-      const dirtyDates = dirtyDatesRef.current;
-      if (isDirty) dirtyDates.add(date);
-      else dirtyDates.delete(date);
-      setDirty(dirtyDates.size > 0);
-    },
-    [setDirty]
-  );
-
-  // Never leave the global flag set behind once the grid is gone.
-  useEffect(() => () => setDirty(false), [setDirty]);
-
-  // Rows publish their save handler here so the shortcut can reach them.
-  const registerRowSaver = useCallback((date, saver) => {
-    if (saver) rowSaversRef.current.set(date, saver);
-    else rowSaversRef.current.delete(date);
-  }, []);
-
-  // Ctrl/Cmd + S saves every row that has pending changes.
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
-        event.preventDefault();
-        dirtyDatesRef.current.forEach((date) => rowSaversRef.current.get(date)?.());
+  const handleSelectIndices = useCallback((rowDate, indices) => {
+    setSelection((prev) => {
+      if (indices.length === 0) {
+        return prev.date === rowDate ? { date: null, indices: [] } : prev;
       }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+      return { date: rowDate, indices };
+    });
   }, []);
 
   const saveMutation = useMutation({
@@ -385,7 +410,6 @@ export default function TimesheetEditor({
               <th key={h}>{h}{h === 1 ? 'st' : h === 2 ? 'nd' : h === 3 ? 'rd' : 'th'} Hour</th>
             ))}
             <th>Total</th>
-            <th className="text-center">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -400,8 +424,8 @@ export default function TimesheetEditor({
                 leave={leave}
                 onSave={handleRowSave}
                 isSaving={savingDate === date}
-                onDirtyChange={handleRowDirty}
-                registerSaver={registerRowSaver}
+                selectedIndices={selection.date === date ? selection.indices : []}
+                onSelectIndices={(indices) => handleSelectIndices(date, indices)}
               />
             );
           })}

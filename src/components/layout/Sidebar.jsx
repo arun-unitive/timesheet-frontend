@@ -3,6 +3,7 @@ import { Clock3, X } from 'lucide-react';
 import { NAV } from '../../lib/navigation';
 import { useUnsavedChanges } from '../../context/UnsavedChangesContext';
 import Avatar from '../ui/Avatar';
+import unitiveLogo from '../../assets/Unitive Logo png.png'; // Adjust path to where you saved the image
 
 /** Dark, fixed sidebar with role-aware navigation. */
 export default function Sidebar({ role, user, open, onClose }) {
@@ -24,12 +25,15 @@ export default function Sidebar({ role, user, open, onClose }) {
       <div className={`sidebar-backdrop ${open ? 'is-open' : ''}`} onClick={onClose} />
       <aside className={`sidebar ${open ? 'is-open' : ''}`}>
         <div className="sidebar__brand">
-          <span className="sidebar__logo">
+          {/* <span className="sidebar__logo">
             <Clock3 size={18} />
-          </span>
-          <div className="flex-1">
-            <div className="sidebar__name">Effortlog</div>
-            <div className="sidebar__tag">Timesheet Suite</div>
+          </span> */}
+          <div className="flex-1" style={{ display: 'flex', alignItems: 'center' }}>
+            <img
+              src={unitiveLogo}
+              alt="Unitive Digital Transformation"
+              style={{ maxHeight: '40px', width: 'auto', objectFit: 'contain' }}
+            />
           </div>
           <button type="button" className="icon-btn header__menu" onClick={onClose} aria-label="Close menu" style={{ color: '#94a3b8' }}>
             <X size={18} />
